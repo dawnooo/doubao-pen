@@ -29,11 +29,12 @@ Codex 给豆包的指令以思路和内容覆盖范围为主，不先写示范�
 - 篇幅按用户或任务的明确要求执行。没有要求时，不自行限字、压缩或检查篇幅。
 - 豆包只提供纯文本内容。公式、表格和引用可用普通文本表达含义；所有目标格式与文件由 Codex 完成。
 - 通过后台 CLI 使用豆包网页版。提交后先做其他独立工作或间隔等待，再读取结果；不高频轮询、不向豆包催问。
+- 跨 Codex 对话串行使用豆包：一篇稿件持锁覆盖发送、等待、读回、核查和全部返修；正文验收并保存后释放，下一个对话再接手。
 - 遇到连接或登录问题时说明情况，不自动改为 Codex 代写或桌面鼠标键盘操作。
 
 ## 安装
 
-需要 Codex、Git、Chrome、OpenCLI、匹配的 Browser Bridge 扩展，以及你自己的豆包页面会话。
+需要 Codex、Git、Node.js 20 或更新版本、Chrome、OpenCLI、匹配的 Browser Bridge 扩展，以及你自己的豆包页面会话。锁脚本只使用 Node.js 标准库，不需要额外安装依赖。
 
 将本仓库克隆到 Codex 的 skills 目录，目录名保留为 `doubao-pen`。默认位置是 `~/.codex/skills/`；如果设置了 `CODEX_HOME`，则使用它下面的 `skills/`。目标目录已存在时先核对或备份，避免覆盖本地修改。
 
@@ -53,13 +54,13 @@ git clone https://github.com/dawnooo/doubao-pen.git "$env:USERPROFILE\.codex\ski
 
 安装 OpenCLI，并按照 [OpenCLI 文档](https://opencli.info/)配置 Chrome 与 Browser Bridge。豆包侧的前置条件和命令见 [豆包适配器文档](https://opencli.info/docs/adapters/browser/doubao.html)。保持 Chrome 和扩展运行，必要的登录或验证码由用户完成。
 
-可以先检查后台连接：
+可先查看本机锁状态，命令不会访问豆包页面：
 
 ```powershell
-opencli doubao status --window background -f json
+node '当前skill绝对路径/scripts/session-lock.mjs' status
 ```
 
-页面可达不代表已能写作；以实际收到完整正文为准。这个流程需要浏览器会话运行，后台调用不占用桌面鼠标键盘。
+取得锁后可经辅助脚本检查豆包连接。页面可达不代表已能写作，以实际收到完整正文为准。这个流程需要浏览器会话运行，后台调用不占用桌面鼠标键盘。
 
 ## 使用
 
@@ -75,19 +76,34 @@ Codex 会先给豆包提纲和必要材料，等待生成后拿回正文。若�
 
 ## 调用与验证
 
-默认使用发送和读取分离的命令，保留同一会话进行返修：
+默认先取得整篇稿件的锁，再使用发送和读取分离的命令，保留同一会话进行返修。以下为 Windows PowerShell 示例，脚本路径请替换为实际安装位置：
 
 ```powershell
-opencli doubao new --window background -f json
-$brief = Get-Content -LiteralPath './brief.txt' -Raw -Encoding UTF8
-opencli doubao send $brief --window background -f json
+$lock = '当前skill绝对路径/scripts/session-lock.mjs'
+$leaseJson = node $lock acquire --owner '当前对话或任务的唯一标识'
+if ($LASTEXITCODE -ne 0) { throw '锁被占用或申请失败，等待后再申请，不要继续操作豆包。' }
+$token = ($leaseJson | ConvertFrom-Json).token
+node $lock run --token $token -- new
+node $lock run --token $token -- send --text-file './brief.txt'
 # 先留出生成时间，处理独立工作或等待，之后再读回。
-opencli doubao read --window background -f json
+node $lock run --token $token -- read
+# 需要返修时继续使用同一 token；完整正文验收并保存后才释放。
+node $lock release --token $token
 ```
 
 普通短文可先预留约30—60秒，再读取一次；尚未完成则继续间隔等待，复杂任务适当延长。`正在思考`、部分正文或工具超时提示不算完成。详细处理方式见 [后台调用说明](references/background-cli.md)。
 
+锁保存在当前 OS 用户的 `~/.codex/locks/doubao-pen`，不同安装位置也共用它。被占用时返回退出码75；错误凭证不能运行或释放锁，命令执行中也不能释放。等待期间保留锁，不能因为暂时不操作网页就让其他稿件接手。文档排版等不再访问豆包的工作可在释放后继续。
+
+辅助脚本不按时间自动抢占，异常终止会保守地保留锁；清理前需确认原任务不再运行、没有未结束的网页命令，且原稿不再需要读回或返修。它保护遵守该流程的本机调用者，直接运行原始 OpenCLI、手动操作同一页面或其他机器上的调用均不受此锁拦截。
+
 已在 Windows 与 OpenCLI 1.8.6 环境下验证过豆包网页版的后台写作、读回和多轮改稿，并完成 skill 格式校验。不同系统、浏览器状态和后续工具版本仍需按实际环境确认。
+
+串行锁另有独立进程测试，使用假的 OpenCLI 入口验证并发竞争、错误凭证、执行中禁止释放、失败保留及异常残留处理，不会向豆包发送测试消息：
+
+```bash
+node tests/session-lock.test.mjs
+```
 
 ## 项目文件
 
@@ -95,6 +111,8 @@ opencli doubao read --window background -f json
 SKILL.md                        技能入口与写作分工
 agents/openai.yaml              Codex 展示与调用提示
 references/background-cli.md    后台发送、等待和读回规则
+scripts/session-lock.mjs         本机串行锁与带凭证的豆包调用入口
+tests/session-lock.test.mjs      无浏览器副作用的并发测试
 ```
 
 本仓库发布技能说明与文档，不包含运行账号、浏览器登录状态或私人写作材料。使用者应自行判断待发送材料是否适合交给豆包服务处理。
