@@ -1,0 +1,13 @@
+# Local drafts, generated outputs, and dependency folders
+work/
+outputs/
+node_modules/
+__pycache__/
+
+# Local credentials and browser state
+.env
+.env.*
+cookies.json
+*.log
+.DS_Store
+Thumbs.db
