@@ -77,8 +77,12 @@ async function runOpenCli(args) {
   if (!['new', 'send', 'read', 'status'].includes(operation)) throw new Error('Supported operations: new, send, read, status.');
   const cliArgs = ['doubao', operation];
   if (operation === 'send') {
-    if (rest.length !== 2 || rest[0] !== '--text-file') throw new Error('send requires --text-file <UTF-8 file>.');
-    const text = fs.readFileSync(rest[1], 'utf8');
+    const singleLine = rest.length === 3 && rest[2] === '--single-line';
+    if (rest[0] !== '--text-file' || (rest.length !== 2 && !singleLine)) throw new Error('send requires --text-file <UTF-8 file> [--single-line].');
+    let text = fs.readFileSync(rest[1], 'utf8');
+    // Some contenteditable composers expose different paragraph breaks on readback.
+    // Opt in only for prose: keep the original file and preserve other whitespace.
+    if (singleLine) text = text.replace(/^\uFEFF/, '').replace(/\r\n|[\r\n\u2028\u2029]/g, ' ');
     if (!text.trim()) throw new Error('The message file is empty.');
     cliArgs.push(text);
   } else if (rest.length) {

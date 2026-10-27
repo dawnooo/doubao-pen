@@ -61,6 +61,18 @@ try {
   assert.equal(sent.code, 0);
   assert.deepEqual(JSON.parse(sent.stdout), ['doubao', 'send', message, '--window', 'background', '-f', 'json']);
 
+  // Opt-in prose transport folds line endings without editing the source or other whitespace.
+  const multilineProse = '\uFEFF第一段。\r\n\r\n第二段：\t甲  乙\r第三段。\n第四段。\u2028第五段。';
+  fs.writeFileSync(brief, multilineProse);
+  const compatible = await run(['run', '--token', token, '--', 'send', '--text-file', brief, '--single-line']);
+  assert.equal(compatible.code, 0, compatible.stderr);
+  assert.deepEqual(JSON.parse(compatible.stdout), ['doubao', 'send', '第一段。  第二段：\t甲  乙 第三段。 第四段。 第五段。', '--window', 'background', '-f', 'json']);
+  assert.equal(fs.readFileSync(brief, 'utf8'), multilineProse);
+  const preserved = await run(['run', '--token', token, '--', 'send', '--text-file', brief]);
+  assert.equal(preserved.code, 0);
+  assert.equal(JSON.parse(preserved.stdout)[2], multilineProse);
+  assert.equal((await run(['run', '--token', token, '--', 'send', '--text-file', brief, '--unknown'])).code, 1);
+
   // The npm PATH resolver works without invoking a Windows shell shim.
   const prefix = path.join(directory, 'npm-bin');
   const packageDir = path.join(prefix, 'node_modules', '@jackwener', 'opencli');

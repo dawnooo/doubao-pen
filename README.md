@@ -29,6 +29,7 @@ Codex 给豆包的指令以思路和内容覆盖范围为主，不先写示范�
 - 篇幅按用户或任务的明确要求执行。没有要求时，不自行限字、压缩或检查篇幅。
 - 豆包只提供纯文本内容。公式、表格和引用可用普通文本表达含义；所有目标格式与文件由 Codex 完成。
 - 通过后台 CLI 使用豆包网页版。提交后先做其他独立工作或间隔等待，再读取结果；不高频轮询、不向豆包催问。
+- 普通自然语言提纲支持单行传输兼容模式，避免部分富文本输入框的换行读回校验失败；原始提示文件保留，代码或表格等依赖换行的内容不自动压平。
 - 跨 Codex 对话串行使用豆包：一篇稿件持锁覆盖发送、等待、读回、核查和全部返修；正文验收并保存后释放，下一个对话再接手。
 - 遇到连接或登录问题时说明情况，不自动改为 Codex 代写或桌面鼠标键盘操作。
 
@@ -84,7 +85,7 @@ $leaseJson = node $lock acquire --owner '当前对话或任务的唯一标识'
 if ($LASTEXITCODE -ne 0) { throw '锁被占用或申请失败，等待后再申请，不要继续操作豆包。' }
 $token = ($leaseJson | ConvertFrom-Json).token
 node $lock run --token $token -- new
-node $lock run --token $token -- send --text-file './brief.txt'
+node $lock run --token $token -- send --text-file './brief.txt' --single-line
 # 先留出生成时间，处理独立工作或等待，之后再读回。
 node $lock run --token $token -- read
 # 需要返修时继续使用同一 token；完整正文验收并保存后才释放。
@@ -92,6 +93,8 @@ node $lock release --token $token
 ```
 
 普通短文可先预留约30—60秒，再读取一次；尚未完成则继续间隔等待，复杂任务适当延长。`正在思考`、部分正文或工具超时提示不算完成。详细处理方式见 [后台调用说明](references/background-cli.md)。
+
+示例中的 `--single-line` 只将发送副本中的换行替换为空格，保留原提示文件；默认不带该参数时保持原文。它用于普通提纲的输入兼容，不适用于换行有语义的代码、表格或逐行字段。若遇到 `Failed to insert text into Doubao composer`，可能是文字已输入、但读回文本与原文不完全一致，不能据此断言输入框为空。发送前校验失败与提交后结果未知需要分别处理，详见 [输入校验失败](references/background-cli.md#输入校验失败)。
 
 锁保存在当前 OS 用户的 `~/.codex/locks/doubao-pen`，不同安装位置也共用它。被占用时返回退出码75；错误凭证不能运行或释放锁，命令执行中也不能释放。等待期间保留锁，不能因为暂时不操作网页就让其他稿件接手。文档排版等不再访问豆包的工作可在释放后继续。
 
